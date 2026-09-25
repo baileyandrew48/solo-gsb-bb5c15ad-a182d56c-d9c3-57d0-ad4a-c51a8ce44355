@@ -109,9 +109,41 @@ SQLite 数据库文件位于容器内 `/data/annotation.db`，通过宿主机 `.
 ### 1. 导入转写稿
 
 在首页点击「导入转写稿新建…」，或在项目内点击「导入转写」（项目内导入会替换
-片段但**保留已有校注**）。支持三种格式：
+片段但**保留已有校注**）。支持以下格式：
 
-**带时间戳的纯文本**（`.txt` / `.srt` / `.vtt` 后缀，或内容无法解析为 JSON 时）：
+**标准 SRT / WebVTT（时间行与正文分行）**：按字幕块识别，块之间用空行分隔；
+每块由可选的序号（SRT）或 cue 标识（WebVTT）、时间行和一行或多行正文组成。
+序号、cue 标识与 `WEBVTT` / `NOTE` / `REGION` / `STYLE` 等头部内容一律忽略；
+正文首行的 `名字: 内容` 识别为说话人（中英文冒号均可），后续续行并入同一
+片段（中文之间不加空格，西文词之间保留空格）；显式起止时间与片段顺序原样
+保留，WebVTT 时间行上的定位参数（`position:20%`、`line:0`、`align:start`
+等）自动忽略。SRT 示例：
+
+```text
+1
+00:00:01,000 --> 00:00:03,500
+访谈者: 感谢您接受访谈，
+能先介绍一下自己吗？
+
+2
+00:00:04,000 --> 00:00:08,000
+受访者: 好的，我叫李明。
+```
+
+WebVTT 示例（时间戳用 `.`，可带 cue 标识与定位参数）：
+
+```text
+WEBVTT
+
+cue-1
+00:00:01.000 --> 00:00:03.500
+访谈者: 感谢您接受访谈
+
+00:00:04.000 --> 00:00:08.000 position:20% align:start
+受访者: 好的，我叫李明
+```
+
+**行内时间戳纯文本**（每行一个片段，旧格式继续支持）：
 
 ```text
 [00:00:00] 访谈者: 感谢您今天接受访谈
@@ -120,9 +152,9 @@ SQLite 数据库文件位于容器内 `/data/annotation.db`，通过宿主机 `.
 [01:09.5] 受访者: 最早全靠手摇车床
 ```
 
-支持 `hh:mm:ss`、`mm:ss`、`mm:ss.mmm` 等时间格式；说话人通过行内的
-`名字: 文本`（中英文冒号均可）识别；省略结束时间时，默认持续到下一片段开始
-（最后一片段默认 1 秒）。
+两种时间格式都支持 `hh:mm:ss`、`mm:ss`、`mm:ss.mmm`（SRT 的逗号小数与
+WebVTT 的点小数均可）；行内时间戳格式省略结束时间时，默认持续到下一片段
+开始（最后一片段默认 1 秒）；SRT / WebVTT 字幕块的结束时间总是显式保留。
 
 **JSON 片段数组**：
 
@@ -1166,7 +1198,7 @@ npm run dev
 
 ```bash
 cd backend
-python -m pytest test_merge.py test_rules_api.py test_quality.py \
+python -m pytest test_merge.py test_importer.py test_rules_api.py test_quality.py \
   test_quality_api.py test_quality_scans_api.py test_quotes_api.py \
   test_speakers_api.py test_excerpts_api.py test_public_transcript_api.py \
   test_coverage_api.py test_corrections_api.py test_project_version_api.py -q
@@ -1180,7 +1212,12 @@ cd frontend
 npm test
 ```
 
-测试覆盖：互不重叠改动自动合并、同字段/不同字段冲突、字段级裁决、
+测试覆盖：**转写导入**单测（`test_importer.py`）覆盖标准 SRT / WebVTT
+分行字幕块（序号与 cue 标识忽略、多行正文并入同一片段、中文不加空格 / 西文
+保留空格、WebVTT 头部与 `NOTE`/`STYLE`/`REGION` 块忽略、时间行定位参数
+忽略、CRLF、无说话人前缀、仅时间行）、行内时间戳纯文本旧格式（显式起止
+锁定、省略结束时间自动续到下一片段）与两种格式混排、空内容报错及 JSON
+路径不受影响；互不重叠改动自动合并、同字段/不同字段冲突、字段级裁决、
 修改/删除冲突、区间重叠与重叠链聚类、端点相接不冲突、自定义值校验、
 增删混合与时间排序等 14 个合并用例；以及规则预览、批量应用、重跑只更新
 本规则结果、手工编辑/删除保护、撤销（含 409）、删除规则解链、项目级联
@@ -1256,10 +1293,11 @@ TestClient）；**质检引擎**另有 16 个扫描线算法单测（越界首�
 │   │   ├── corrections.py   # 错词批量校正：词表校验、单遍最长优先替换、转写版本指纹
 │   │   ├── coverage.py      # 校注覆盖盲区：按说话人合并发言、同名校注覆盖并集裁剪与未覆盖区间
 │   │   ├── speakers.py      # 说话人归一：名称汇总、链式映射归并与循环检测
-│   │   ├── importer.py      # 转写稿解析（纯文本 / JSON）
+│   │   ├── importer.py      # 转写稿解析（SRT / WebVTT 字幕块 / 行内时间戳纯文本 / JSON）
 │   │   ├── db.py            # SQLite 持久化（项目 / 规则 / 应用记录 / 质检扫描历史 / 说话人归一与错词校正事务；文档版本指纹与锁内比对保存）
 │   │   └── schemas.py       # Pydantic 模型
 │   ├── test_merge.py        # 合并算法测试
+│   ├── test_importer.py     # 转写导入解析单测（SRT / WebVTT 分行字幕块与行内时间戳旧格式）
 │   ├── test_rules_api.py    # 规则模块端到端 API 测试
 │   ├── test_quality.py      # 质检引擎扫描线单测
 │   ├── test_quality_api.py  # 质检端到端 API 测试

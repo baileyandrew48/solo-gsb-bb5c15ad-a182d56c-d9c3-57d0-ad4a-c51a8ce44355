@@ -105,7 +105,7 @@ export default function ProjectListPage() {
       </div>
       {error && <div className="error">{error}</div>}
       <p className="muted">
-        支持带时间戳的纯文本（如
+        支持标准 SRT / WebVTT 字幕、带时间戳的纯文本（如
         <code>[00:00:01] 张三: 你好</code>）、JSON 片段数组，或此前导出的校注 JSON。
       </p>
 
